@@ -1,0 +1,52 @@
+# ---- Build artifacts --------------------------------------------------------
+build/
+build-*/
+out/
+cmake-build-*/
+
+# ---- CMake ------------------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# ---- Compiled object / lib / exe -------------------------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# ---- IDE / Editor -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.clangd/
+
+# ---- OS ---------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# ---- Media samples (large, do not commit) ----------------------------------
+# Test media goes in tools/samples/ — gitignored to keep repo small.
+tools/samples/*.h264
+tools/samples/*.mp4
+tools/samples/*.ts
+
+# ---- Logs / captures --------------------------------------------------------
+*.log
+*.pcap
+*.pcapng
