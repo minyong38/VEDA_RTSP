@@ -1,7 +1,7 @@
 # VEDA_RTSP
 
-> 외부 미디어 라이브러리 없이 처음부터 구현한 RTSP/RTP 영상 스트리밍 서버.
-> POSIX 소켓과 RFC 문서만으로 H.264 비디오를 표준 클라이언트(ffplay, VLC)에 전송합니다.
+> RTSP 프로토콜을 RFC 2326 표준 문서를 보고 처음부터 구현하는 프로젝트.
+> RTP 영상 전송은 검증된 라이브러리를 활용하여 RTSP 시그널링 구현에 집중합니다.
 
 [![C++](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 [![CMake](https://img.shields.io/badge/CMake-3.16%2B-brightgreen.svg)](https://cmake.org/)
@@ -11,29 +11,30 @@
 
 ## 왜 이걸 만드는가
 
-RTSP/RTP는 IP 카메라·NVR·드론 영상 전송의 사실상 표준이지만,
-대부분의 프로젝트는 **Live555**나 **GStreamer**로 추상화한 채 쓴다.
-이 프로젝트는 그 추상화를 걷어내고 다음을 직접 다룬다:
+RTSP는 IP 카메라·NVR·드론 영상 전송의 사실상 표준 시그널링 프로토콜이다.
+대부분의 프로젝트는 **Live555**나 **GStreamer**로 추상화한 채 쓰지만,
+이 프로젝트는 **RTSP 시그널링 계층을 직접 구현**하여 프로토콜을 깊이 이해하는 것이 목표다:
 
-- RTP 12바이트 헤더의 비트 패킹과 시퀀스/타임스탬프 관리 (RFC 3550)
-- H.264 NAL 유닛을 MTU에 맞춰 **FU-A 분할**하는 페이로드 포맷 (RFC 6184)
 - RTSP 메서드별 세션 상태머신: `OPTIONS → DESCRIBE → SETUP → PLAY` (RFC 2326)
-- TCP 제어 채널과 UDP 데이터 채널의 분리 운영
+- SDP(Session Description Protocol) 동적 생성 (RFC 4566)
+- TCP 제어 채널 운영 및 클라이언트 세션 관리
+- RTP 전송은 라이브러리(live555/GStreamer)를 활용하여 안정성 확보
 
-목표는 "동작하는 서버" 자체가 아니라 **`tcpdump -X`로 패킷을 찍었을 때 한 바이트씩 설명할 수 있는 수준**의 이해다.
+목표는 "RTSP 시그널링을 `tcpdump`로 찍었을 때 모든 헤더를 설명할 수 있는 수준"의 이해다.
 
 ## 주요 기능
 
+- [x] 프로젝트 구조 설계
 - [ ] RTSP 1.0 요청 파서 (OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN)
+- [ ] RTSP 응답 생성기
 - [ ] DESCRIBE 응답용 SDP 본문 생성
-- [ ] RTP 패킷화 + H.264 FU-A 분할
-- [ ] UDP를 통한 RTP 영상 송출
-- [ ] 다중 클라이언트 동시 접속 (Week 5 이후)
-- [ ] RTCP Sender Report로 동기화 정보 전송 (Week 7 이후)
+- [ ] 세션 상태머신 구현
+- [ ] 멀티클라이언트 동시 접속 (epoll 기반)
+- [ ] RTP 라이브러리 연동 (live555 또는 GStreamer)
 
 ## 데모
 
-> 첫 프레임 송출 성공 시 GIF 첨부 예정 (Week 4 종료 시점)
+> 첫 RTSP 핸드셰이크 성공 시 캡처 첨부 예정
 >
 > ```bash
 > $ ffplay -rtsp_transport udp rtsp://localhost:8554/stream
@@ -46,7 +47,7 @@ RTSP/RTP는 IP 카메라·NVR·드론 영상 전송의 사실상 표준이지만
 - C++17 컴파일러 (GCC 9+ / Clang 10+)
 - CMake 3.16+
 - POSIX 환경 (Linux 권장, macOS 동작)
-- 테스트용: ffmpeg (ffplay 포함)
+- 테스트용: ffmpeg (ffplay 포함), VLC
 
 ### 빌드
 
@@ -58,7 +59,7 @@ cmake --build build -j
 ### 실행
 
 ```bash
-./build/veda_rtsp --port 8554 --source tools/samples/test.h264
+./build/veda_rtsp --port 8554
 ```
 
 ### 클라이언트 연결
@@ -88,18 +89,15 @@ VEDA_RTSP/
 │   ├── rtsp/
 │   │   ├── server.{hpp,cpp}    # TCP accept 루프, 세션 생성
 │   │   ├── parser.{hpp,cpp}    # RTSP 요청 라인 + 헤더 파싱
+│   │   ├── response.{hpp,cpp}  # RTSP 응답 생성
 │   │   └── session.{hpp,cpp}   # 세션 상태머신
 │   ├── sdp/
 │   │   └── builder.{hpp,cpp}   # DESCRIBE 응답용 SDP 본문
-│   ├── rtp/
-│   │   ├── packetizer.{hpp,cpp}  # RTP 12바이트 헤더 작성
-│   │   └── h264_fua.{hpp,cpp}    # H.264 NAL → FU-A 분할
 │   └── net/
-│       ├── tcp_socket.{hpp,cpp}  # POSIX TCP 래퍼
-│       └── udp_socket.{hpp,cpp}  # POSIX UDP 래퍼
+│       └── tcp_socket.{hpp,cpp}  # POSIX TCP 래퍼
 │
 ├── tests/                  # 모듈별 단위 테스트
-├── tools/                  # ffplay 스모크 테스트 등
+├── tools/                  # 테스트 스크립트
 └── docs/
     ├── architecture.md     # 컴포넌트 다이어그램
     ├── state-machine.md    # 세션 상태 전이표
@@ -110,25 +108,23 @@ VEDA_RTSP/
 
 ## 진행 상황
 
-8주 일정으로 진행 중. 자세한 일정은 기획안 참고.
-
 | 주차 | 목표 | 상태 |
 |------|------|------|
 | Week 1 | TCP 서버 + RTSP 요청 파서 | 🟡 진행 중 |
-| Week 2 | DESCRIBE → SDP 응답 | ⬜ |
-| Week 3 | ⭐ SETUP + 첫 RTP 패킷 송출 | ⬜ |
-| Week 4 | H.264 FU-A 분할 + 영상 재생 | ⬜ |
-| Week 5 | 다중 클라이언트 동시 접속 | ⬜ |
-| Week 6 | 성능 측정 + 최적화 | ⬜ |
-| Week 7 | RTCP Sender Report | ⬜ |
+| Week 2 | DESCRIBE → SDP 응답, SETUP 핸들러 | ⬜ |
+| Week 3 | PLAY/TEARDOWN + 세션 상태머신 완성 | ⬜ |
+| Week 4 | RTP 라이브러리 연동 + 첫 영상 재생 | ⬜ |
+| Week 5 | 멀티클라이언트 동시 접속 (epoll) | ⬜ |
+| Week 6 | 안정화 + 에러 처리 | ⬜ |
+| Week 7 | 성능 측정 + 최적화 | ⬜ |
 | Week 8 | 문서 정리 + 포트폴리오화 | ⬜ |
 
 ## 참고 표준
 
 - [RFC 2326](https://datatracker.ietf.org/doc/html/rfc2326) — RTSP 1.0
-- [RFC 3550](https://datatracker.ietf.org/doc/html/rfc3550) — RTP
 - [RFC 4566](https://datatracker.ietf.org/doc/html/rfc4566) — SDP
-- [RFC 6184](https://datatracker.ietf.org/doc/html/rfc6184) — H.264 RTP payload format
+- [RFC 3550](https://datatracker.ietf.org/doc/html/rfc3550) — RTP (라이브러리가 처리)
+- [RFC 6184](https://datatracker.ietf.org/doc/html/rfc6184) — H.264 RTP payload format (라이브러리가 처리)
 
 ## 라이선스
 
