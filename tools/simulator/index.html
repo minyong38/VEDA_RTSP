@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>VEDA_RTSP · 시나리오 시뮬레이터</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1d222d;
+    --line: #2a3140;
+    --text: #e5e9f0;
+    --muted: #8b95a7;
+    --accent: #7dd3fc;
+    --accent-2: #fca5a5;
+    --client: #93c5fd;
+    --server: #fbbf24;
+    --rtp: #86efac;
+    --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, #131722 0%, #0f1115 100%);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.3px; }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  main {
+    display: grid;
+    grid-template-columns: 320px 1fr 380px;
+    gap: 0;
+    height: calc(100vh - 64px);
+  }
+  /* 좌측 스텝 리스트 */
+  .steps {
+    border-right: 1px solid var(--line);
+    background: var(--panel);
+    overflow-y: auto;
+  }
+  .step {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 13px;
+  }
+  .step:hover { background: #1a1f2a; }
+  .step.active { background: #232a38; border-left: 3px solid var(--accent); padding-left: 17px; }
+  .step.done .num { background: var(--ok); color: #0f1115; }
+  .step .num {
+    display: inline-block; width: 22px; height: 22px;
+    line-height: 22px; text-align: center;
+    border-radius: 50%; background: var(--line); color: var(--text);
+    font-size: 11px; margin-right: 8px; font-weight: 600;
+  }
+  .step .title { font-weight: 600; }
+  .step .desc { color: var(--muted); font-size: 11px; margin-top: 4px; margin-left: 30px; }
+
+  /* 중앙 시퀀스 다이어그램 */
+  .stage {
+    padding: 20px 28px;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .actors {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+    position: sticky; top: 0; z-index: 5;
+    background: var(--bg);
+    padding-bottom: 8px;
+  }
+  .actor {
+    padding: 12px 16px; border-radius: 8px;
+    text-align: center; font-weight: 600;
+    border: 1px solid var(--line);
+  }
+  .actor.client { color: var(--client); background: rgba(147, 197, 253, 0.08); }
+  .actor.server { color: var(--server); background: rgba(251, 191, 36, 0.08); }
+  .actor small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .lines {
+    position: relative;
+    margin-top: 12px;
+    min-height: 100%;
+  }
+  .lifeline {
+    position: absolute; top: 0; bottom: 0;
+    width: 2px; background: var(--line);
+  }
+  .lifeline.client { left: calc(25% - 1px); }
+  .lifeline.server { left: calc(75% - 1px); }
+
+  .msg {
+    position: relative; margin: 18px 0;
+    opacity: 0.25;
+    transition: opacity 0.3s;
+  }
+  .msg.visible { opacity: 1; }
+  .msg.current .arrow { box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.25); }
+
+  .arrow {
+    height: 32px;
+    margin: 0 calc(25% + 12px);
+    border-radius: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; color: var(--text);
+    position: relative;
+  }
+  .arrow .label { padding: 0 12px; }
+  .arrow.c2s::before {
+    content: ''; position: absolute; left: -10px; top: 50%; transform: translateY(-50%);
+    width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+    border-right: 10px solid var(--client);
+  }
+  .arrow.c2s { border-color: var(--client); }
+  .arrow.s2c::after {
+    content: ''; position: absolute; right: -10px; top: 50%; transform: translateY(-50%);
+    width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+    border-left: 10px solid var(--server);
+  }
+  .arrow.s2c { border-color: var(--server); }
+  .arrow.rtp { border-color: var(--rtp); background: rgba(134, 239, 172, 0.06); }
+  .arrow.rtp::after {
+    content: ''; position: absolute; right: -10px; top: 50%; transform: translateY(-50%);
+    width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+    border-left: 10px solid var(--rtp);
+  }
+
+  .state-row {
+    display: flex; justify-content: space-between;
+    padding: 4px calc(25% - 60px);
+    font-size: 10px; color: var(--muted);
+  }
+  .badge {
+    display: inline-block; padding: 2px 8px;
+    border-radius: 10px; background: var(--panel-2);
+    border: 1px solid var(--line);
+    font-family: ui-monospace, "SF Mono", monospace;
+  }
+  .badge.playing { color: var(--ok); border-color: var(--ok); }
+  .badge.ready { color: var(--accent); border-color: var(--accent); }
+  .badge.closed { color: var(--accent-2); border-color: var(--accent-2); }
+
+  /* 우측 디테일 패널 */
+  .detail {
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 20px 22px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .detail h2 {
+    margin: 0 0 8px; font-size: 15px;
+    color: var(--accent);
+  }
+  .detail .meta { color: var(--muted); font-size: 11px; margin-bottom: 14px; }
+  .detail .narration {
+    background: rgba(125, 211, 252, 0.06);
+    border-left: 2px solid var(--accent);
+    padding: 10px 12px; border-radius: 4px;
+    margin-bottom: 14px;
+    color: #c7d2fe;
+    font-size: 12.5px;
+  }
+  .detail pre {
+    background: #0a0d13;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    font-family: ui-monospace, "SF Mono", monospace;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    color: #d1d5db;
+  }
+  .detail .files {
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .detail .files code {
+    background: var(--panel-2); padding: 1px 5px;
+    border-radius: 3px; color: var(--text);
+    font-size: 11px;
+  }
+
+  /* 컨트롤 바 */
+  footer {
+    position: fixed; bottom: 0; left: 320px; right: 380px;
+    background: linear-gradient(180deg, #0f1115cc 0%, #0f1115 60%);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+    padding: 10px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    z-index: 10;
+  }
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line);
+    padding: 8px 16px; border-radius: 6px;
+    font-size: 13px; cursor: pointer; font-weight: 500;
+    transition: all 0.15s;
+  }
+  button:hover { background: #232a38; border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #0f1115; border-color: var(--accent); }
+  button.primary:hover { background: #5cc4f0; }
+  .progress {
+    font-size: 12px; color: var(--muted);
+    font-family: ui-monospace, monospace;
+  }
+
+  .syntax-key { color: #fca5a5; }
+  .syntax-val { color: #86efac; }
+  .syntax-cmt { color: #6b7280; font-style: italic; }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🎥 VEDA_RTSP 시나리오 시뮬레이터</h1>
+      <div class="sub">VLC ↔ veda_rtsp 서버 · RTSP 핸드셰이크부터 RTP 스트리밍까지 한 단계씩</div>
+    </div>
+    <div>
+      <button id="autoBtn">▶ 자동 재생</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="steps" id="stepsList"></aside>
+
+    <section class="stage">
+      <div class="actors">
+        <div class="actor client">
+          📱 VLC / ffplay (Client)
+          <small>192.168.0.20</small>
+        </div>
+        <div class="actor server">
+          🖥️ veda_rtsp (Server)
+          <small>192.168.0.10 : 8554</small>
+        </div>
+      </div>
+      <div class="lines" id="lines">
+        <div class="lifeline client"></div>
+        <div class="lifeline server"></div>
+      </div>
+    </section>
+
+    <aside class="detail" id="detail">
+      <h2>시작하려면 ▶ 자동 재생을 누르거나 다음을 클릭</h2>
+      <div class="meta">왼쪽 단계를 클릭해도 됩니다.</div>
+      <div class="narration">
+        VLC가 라즈베리파이의 카메라 영상을 받아오기까지의 모든 패킷 교환을
+        한 단계씩 따라가 봅니다. 각 단계마다 실제 와이어에서 어떤 바이트가
+        오가는지, 그리고 우리 소스 코드의 어느 부분이 동작하는지 확인할 수 있어요.
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <button id="prevBtn">◀ 이전</button>
+    <div class="progress" id="progress">0 / 0</div>
+    <button id="nextBtn" class="primary">다음 ▶</button>
+  </footer>
+
+<script>
+const SCENARIO = [
+  {
+    title: "TCP 연결",
+    short: "8554번 문 두드리기",
+    dir: "c2s",
+    label: "TCP SYN → SYN/ACK → ACK",
+    narration: "VLC가 서버의 8554번 포트로 TCP 연결을 엽니다. 3-way handshake가 끝나면 두 호스트 사이에 전용 양방향 통화선이 생긴 셈이에요. 앞으로 모든 RTSP 명령은 이 한 줄을 통해 텍스트로 오갈 거예요.",
+    wire: "[TCP 3-way handshake — 페이로드 없음]\nclient → server : SYN  (dst port 8554)\nserver → client : SYN, ACK\nclient → server : ACK",
+    files: ["src/net/tcp_socket.cpp  — accept() 깨어남", "src/rtsp/server.cpp  — 새 세션 fd 등록"],
+    state: { client: "CONNECTING", server: "INIT" }
+  },
+  {
+    title: "OPTIONS 요청",
+    short: "메뉴판 좀 보여줘요",
+    dir: "c2s",
+    label: "OPTIONS",
+    narration: "VLC가 첫 마디로 \"OPTIONS\"를 던집니다. 식당 들어가서 \"여기 뭐 팔아요?\" 묻는 것과 같아요. CSeq 헤더에 1번이라고 번호를 매겨놨다는 점이 포인트 — 모든 응답에 이 번호가 그대로 따라와야 합니다.",
+    wire: `OPTIONS rtsp://192.168.0.10:8554/stream RTSP/1.0\\r\\n
+CSeq: 1\\r\\n
+User-Agent: LibVLC/3.0.0\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/parser.cpp  — Request-Line + 헤더 파싱"],
+    state: { client: "AWAIT_OPTIONS", server: "INIT" }
+  },
+  {
+    title: "OPTIONS 응답",
+    short: "이런 거 받아요",
+    dir: "s2c",
+    label: "200 OK + Public",
+    narration: "서버가 자신이 지원하는 메서드 목록을 돌려줍니다. CSeq: 1을 그대로 메아리치는 게 보이죠? VLC는 이걸로 \"아, 이 서버에 DESCRIBE를 보내도 되겠구나\"를 확인합니다.",
+    wire: `RTSP/1.0 200 OK\\r\\n
+CSeq: 1\\r\\n
+Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/response.cpp  — 응답 빌더", "src/rtsp/server.cpp  — handle_options()"],
+    state: { client: "READY_TO_DESCRIBE", server: "INIT" }
+  },
+  {
+    title: "DESCRIBE 요청",
+    short: "영상 명세서 주세요",
+    dir: "c2s",
+    label: "DESCRIBE",
+    narration: "VLC가 \"이 스트림이 뭔지 설명해줘\"라고 묻습니다. Accept 헤더에 application/sdp를 적어 보내서 SDP 형식으로 답해달라는 의사 표시도 잊지 않아요.",
+    wire: `DESCRIBE rtsp://192.168.0.10:8554/stream RTSP/1.0\\r\\n
+CSeq: 2\\r\\n
+Accept: application/sdp\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/parser.cpp"],
+    state: { client: "AWAIT_DESCRIBE", server: "INIT" }
+  },
+  {
+    title: "DESCRIBE 응답 (SDP)",
+    short: "여기 명함 받아요",
+    dir: "s2c",
+    label: "200 OK + SDP",
+    narration: "서버가 SDP라는 이름의 명함을 건네줍니다. 코덱은 H.264, 클럭은 90kHz, payload type은 96번이라는 약속이 여기 다 적혀있어요. sprop-parameter-sets에 SPS/PPS를 Base64로 미리 넣어주는 게 핵심 — 디코더가 이걸 받아야 첫 프레임을 그릴 준비가 됩니다.",
+    wire: `RTSP/1.0 200 OK\\r\\n
+CSeq: 2\\r\\n
+Content-Type: application/sdp\\r\\n
+Content-Length: 248\\r\\n
+\\r\\n
+v=0\\r\\n
+o=- 0 0 IN IP4 0.0.0.0\\r\\n
+s=VEDA RTSP Stream\\r\\n
+c=IN IP4 0.0.0.0\\r\\n
+t=0 0\\r\\n
+m=video 0 RTP/AVP 96\\r\\n
+a=rtpmap:96 H264/90000\\r\\n
+a=fmtp:96 packetization-mode=1; profile-level-id=42001E; sprop-parameter-sets=Z0KAH...,aM4...\\r\\n
+a=control:track1\\r\\n`,
+    files: ["src/sdp/builder.cpp  — SDP 본문 생성", "src/rtsp/server.cpp  — handle_describe()"],
+    state: { client: "READY_TO_SETUP", server: "INIT" }
+  },
+  {
+    title: "SETUP 요청",
+    short: "UDP 라인 깔자",
+    dir: "c2s",
+    label: "SETUP track1",
+    narration: "이제 본격적입니다. VLC가 \"나 RTP 받을 포트 5000/5001 열어뒀어\"라고 알려줍니다. Transport 헤더의 client_port=5000-5001이 그 의미예요. 짝수가 RTP, 홀수가 RTCP용입니다.",
+    wire: `SETUP rtsp://192.168.0.10:8554/stream/track1 RTSP/1.0\\r\\n
+CSeq: 3\\r\\n
+Transport: RTP/AVP;unicast;client_port=5000-5001\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/parser.cpp  — Transport 헤더 파싱"],
+    state: { client: "AWAIT_SETUP", server: "INIT" }
+  },
+  {
+    title: "SETUP 응답",
+    short: "내 포트는 6000, 세션 12345",
+    dir: "s2c",
+    label: "200 OK + Session",
+    narration: "서버가 자기 송신 포트(server_port=6000-6001)를 알려주고, 세션 ID 12345를 부여합니다. 이 순간 서버는 RTP용 UDP 소켓을 생성하고, 세션 상태머신이 INIT에서 READY로 넘어갑니다. 아직 영상은 흐르지 않아요. 라인만 깔린 거예요.",
+    wire: `RTSP/1.0 200 OK\\r\\n
+CSeq: 3\\r\\n
+Transport: RTP/AVP;unicast;client_port=5000-5001;server_port=6000-6001\\r\\n
+Session: 12345;timeout=60\\r\\n
+\\r\\n`,
+    files: ["src/net/udp_socket.cpp  — UDP 소켓 생성", "src/rtsp/session.cpp  — INIT → READY 전이", "src/rtsp/response.cpp"],
+    state: { client: "READY_TO_PLAY", server: "READY" }
+  },
+  {
+    title: "PLAY 요청",
+    short: "재생!",
+    dir: "c2s",
+    label: "PLAY",
+    narration: "버튼이 눌렸습니다. VLC가 PLAY를 보내고, 받은 세션 ID 12345를 헤더에 실어 \"이 세션 재생해\"라고 분명히 합니다.",
+    wire: `PLAY rtsp://192.168.0.10:8554/stream RTSP/1.0\\r\\n
+CSeq: 4\\r\\n
+Session: 12345\\r\\n
+Range: npt=0.000-\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/parser.cpp"],
+    state: { client: "AWAIT_PLAY", server: "READY" }
+  },
+  {
+    title: "PLAY 응답",
+    short: "OK, 시작합니다",
+    dir: "s2c",
+    label: "200 OK",
+    narration: "서버는 200 OK를 돌려주고, 그 다음 명령은 한 가지 — 카메라 파이프라인 가동. 상태머신은 READY에서 PLAYING으로 넘어가고, 별도 송신 스레드가 깨어나면서 곧 RTP 패킷이 흐르기 시작합니다.",
+    wire: `RTSP/1.0 200 OK\\r\\n
+CSeq: 4\\r\\n
+Session: 12345\\r\\n
+RTP-Info: url=rtsp://192.168.0.10:8554/stream/track1;seq=0;rtptime=0\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/server.cpp  — handle_play()", "src/rtsp/session.cpp  — READY → PLAYING", "src/rtp/streamer.cpp  — 송신 시작"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "카메라 → NAL",
+    short: "libcamera-vid가 NAL 토해냄",
+    dir: "internal-server",
+    label: "[서버 내부] libcamera → NAL",
+    narration: "서버 안쪽 이야기예요. libcamera-vid 프로세스가 H.264 Annex-B 바이트스트림을 stdout으로 흘려보내고, camera/source.cpp가 그걸 받아서 start code(00 00 00 01) 기준으로 NAL 단위로 자릅니다. 첫 NAL은 보통 SPS(type 7), 그 다음 PPS(type 8), 그리고 키프레임 IDR(type 5)이 옵니다.",
+    wire: `[libcamera-vid stdout]
+00 00 00 01 67 42 00 1e ...  ← SPS (type 7)
+00 00 00 01 68 ce 38 80      ← PPS (type 8)
+00 00 00 01 65 ...           ← IDR slice (type 5, ~50KB)
+00 00 00 01 41 ...           ← P-frame slice (type 1)
+...`,
+    files: ["src/camera/source.cpp  — Annex-B 파싱, NAL 추출"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "NAL → FU-A 분할",
+    short: "큰 NAL은 박스로 나눠 담기",
+    dir: "internal-server",
+    label: "[서버 내부] H.264 FU-A 분할",
+    narration: "이더넷 MTU 1500에서 IP/UDP/RTP 헤더 뺀 페이로드 한도는 1388바이트. IDR NAL이 50KB라면? 잘게 잘라야죠. FU-A 분할이 등장합니다. 첫 조각엔 Start 비트, 마지막 조각엔 End 비트, 중간은 둘 다 0. 수신측은 이 표지를 보고 다시 합쳐요.",
+    wire: `원본 NAL (50000B, type=5, NRI=3)
+  ↓ FU-A 분할 (36개 조각)
+[조각 1]  FU-Ind: 7C (NRI=3, Type=28)  FU-Hdr: 85 (S=1, E=0, Orig=5)  payload[0..1385]
+[조각 2]  FU-Ind: 7C                   FU-Hdr: 05 (S=0, E=0, Orig=5)  payload[1386..2771]
+...
+[조각 36] FU-Ind: 7C                   FU-Hdr: 45 (S=0, E=1, Orig=5)  payload[남은 바이트]`,
+    files: ["src/rtp/h264_fua.cpp  — FU-A 분할"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "RTP 패킷 생성",
+    short: "12바이트 헤더 + 페이로드",
+    dir: "internal-server",
+    label: "[서버 내부] RTP 헤더 작성",
+    narration: "각 조각 앞에 12바이트 RTP 헤더를 붙입니다. 시퀀스 번호는 1씩 증가, 같은 프레임의 모든 조각은 동일한 timestamp, 마지막 조각에만 Marker=1. 90kHz 클럭이라 30fps면 프레임당 +3000.",
+    wire: `[RTP 헤더 12바이트]
+80 60 00 64  ← V=2 P=0 X=0 CC=0 | M=0 PT=96 | seq=0x0064 (100)
+00 00 0B B8  ← timestamp = 3000
+12 34 56 78  ← SSRC = 0x12345678
+[페이로드]
+7C 85 65 ... ← FU indicator, FU header, NAL 데이터`,
+    files: ["src/rtp/packetizer.cpp  — 12바이트 헤더 작성"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "RTP 패킷 송출 (1/36)",
+    short: "UDP 6000 → 5000",
+    dir: "rtp",
+    label: "RTP seq=100, ts=3000, S=1",
+    narration: "첫 조각이 UDP로 날아갑니다. sendto() 한 방. 받았는지 확인 안 해요. 그냥 던집니다.",
+    wire: `UDP 6000 → 5000  |  size=1400B
+RTP: seq=100  ts=3000  M=0
+FU : S=1 E=0  OrigType=5 (IDR)`,
+    files: ["src/net/udp_socket.cpp  — sendto()"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "RTP 패킷 송출 (중간)",
+    short: "조각 2~35",
+    dir: "rtp",
+    label: "RTP seq=101..134, ts=3000, S=0 E=0",
+    narration: "중간 조각들은 모두 같은 timestamp(같은 프레임)이고, S=E=0. 시퀀스만 1씩 올라갑니다. 수신측이 시퀀스 번호로 정렬해서 다시 이어붙일 수 있어요.",
+    wire: `UDP 6000 → 5000  ×34
+RTP: seq=101..134  ts=3000  M=0
+FU : S=0 E=0  OrigType=5`,
+    files: ["src/rtp/streamer.cpp  — 송신 루프"],
+    state: { client: "STREAMING", server: "PLAYING" }
+  },
+  {
+    title: "RTP 패킷 송출 (36/36)",
+    short: "마지막 조각, M=1",
+    dir: "rtp",
+    label: "RTP seq=135, ts=3000, E=1, M=1",
+    narration: "마지막 조각에 두 가지 마커가 모두 박힙니다. RTP 헤더의 Marker=1은 \"프레임 끝\", FU 헤더의 End=1은 \"NAL 끝\". VLC는 이걸 보고 \"한 프레임 다 모았다!\" 하면서 디코더에 통째로 밀어넣습니다.",
+    wire: `UDP 6000 → 5000  |  size=마지막 조각
+RTP: seq=135  ts=3000  M=1   ← 프레임 끝
+FU : S=0 E=1  OrigType=5     ← NAL 끝`,
+    files: ["src/rtp/packetizer.cpp"],
+    state: { client: "FIRST_FRAME!", server: "PLAYING" }
+  },
+  {
+    title: "다음 프레임 (P-frame)",
+    short: "ts += 3000",
+    dir: "rtp",
+    label: "RTP seq=136+, ts=6000",
+    narration: "1/30초 뒤 다음 프레임. P-프레임은 키프레임 대비 변화량만 담아서 훨씬 작아요. 보통 MTU 안에 들어가니까 FU-A 없이 단일 NAL로 한 패킷에 담겨 나갑니다. timestamp는 +3000.",
+    wire: `UDP 6000 → 5000
+RTP: seq=136  ts=6000  M=1
+페이로드: [NAL] 41 ... (P-frame, ~3KB)`,
+    files: ["src/rtp/streamer.cpp"],
+    state: { client: "PLAYING", server: "PLAYING" }
+  },
+  {
+    title: "TEARDOWN",
+    short: "그만 볼게요",
+    dir: "c2s",
+    label: "TEARDOWN",
+    narration: "사용자가 VLC를 닫거나 정지를 누르면, VLC는 점잖게 TEARDOWN을 보냅니다. 서버는 200 OK를 돌리고 송신 스레드를 중단, UDP 소켓을 닫고, 세션을 CLOSED 상태로 보냅니다. TCP 연결도 곧 닫혀요.",
+    wire: `TEARDOWN rtsp://192.168.0.10:8554/stream RTSP/1.0\\r\\n
+CSeq: 5\\r\\n
+Session: 12345\\r\\n
+\\r\\n
+─────────────────
+RTSP/1.0 200 OK\\r\\n
+CSeq: 5\\r\\n
+\\r\\n`,
+    files: ["src/rtsp/server.cpp  — handle_teardown()", "src/rtsp/session.cpp  — * → CLOSED"],
+    state: { client: "CLOSED", server: "CLOSED" }
+  }
+];
+
+// ────────── 렌더링 ──────────
+const stepsList = document.getElementById('stepsList');
+const lines     = document.getElementById('lines');
+const detail    = document.getElementById('detail');
+const progress  = document.getElementById('progress');
+const prevBtn   = document.getElementById('prevBtn');
+const nextBtn   = document.getElementById('nextBtn');
+const autoBtn   = document.getElementById('autoBtn');
+
+let cur = -1;
+let autoTimer = null;
+
+// 좌측 스텝 리스트
+SCENARIO.forEach((s, i) => {
+  const div = document.createElement('div');
+  div.className = 'step';
+  div.dataset.idx = i;
+  div.innerHTML = `
+    <div><span class="num">${i+1}</span><span class="title">${s.title}</span></div>
+    <div class="desc">${s.short}</div>
+  `;
+  div.onclick = () => goTo(i);
+  stepsList.appendChild(div);
+});
+
+// 중앙 시퀀스 라인 (모든 메시지 한 번에 만들어 두고 visible 토글)
+SCENARIO.forEach((s, i) => {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  wrap.dataset.idx = i;
+  let arrowClass = s.dir;
+  if (s.dir === 'internal-server' || s.dir === 'internal-client') arrowClass = 's2c';
+  if (s.dir === 'rtp') arrowClass = 'rtp';
+  wrap.innerHTML = `
+    <div class="arrow ${arrowClass}">
+      <span class="label">${s.label}</span>
+    </div>
+    <div class="state-row">
+      <span class="badge ${stateClass(s.state.client)}">client: ${s.state.client}</span>
+      <span class="badge ${stateClass(s.state.server)}">server: ${s.state.server}</span>
+    </div>
+  `;
+  lines.appendChild(wrap);
+});
+
+function stateClass(s) {
+  if (s.includes('PLAYING') || s.includes('STREAMING') || s.includes('FIRST_FRAME')) return 'playing';
+  if (s.includes('READY')) return 'ready';
+  if (s.includes('CLOSED')) return 'closed';
+  return '';
+}
+
+function goTo(idx) {
+  if (idx < 0 || idx >= SCENARIO.length) return;
+  cur = idx;
+  // 좌측
+  [...stepsList.children].forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+    el.classList.toggle('done', i < idx);
+  });
+  // 중앙
+  [...lines.querySelectorAll('.msg')].forEach((el, i) => {
+    el.classList.toggle('visible', i <= idx);
+    el.classList.toggle('current', i === idx);
+  });
+  // 디테일
+  const s = SCENARIO[idx];
+  detail.innerHTML = `
+    <h2>${idx+1}. ${s.title}</h2>
+    <div class="meta">${s.label}</div>
+    <div class="narration">${s.narration}</div>
+    <pre>${escapeHtml(s.wire)}</pre>
+    <div class="files">
+      <strong style="color:var(--text)">📂 관련 파일</strong><br>
+      ${s.files.map(f => `<code>${f}</code>`).join('<br>')}
+    </div>
+  `;
+  // 진행도
+  progress.textContent = `${idx+1} / ${SCENARIO.length}`;
+  prevBtn.disabled = idx === 0;
+  nextBtn.disabled = idx === SCENARIO.length - 1;
+  // 스크롤
+  const active = stepsList.children[idx];
+  if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const curMsg = lines.querySelectorAll('.msg')[idx];
+  if (curMsg) curMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+prevBtn.onclick = () => goTo(cur - 1);
+nextBtn.onclick = () => goTo(cur + 1);
+
+autoBtn.onclick = () => {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    autoBtn.textContent = '▶ 자동 재생';
+    return;
+  }
+  autoBtn.textContent = '⏸ 일시정지';
+  if (cur < 0) goTo(0);
+  autoTimer = setInterval(() => {
+    if (cur >= SCENARIO.length - 1) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+      autoBtn.textContent = '▶ 자동 재생';
+      return;
+    }
+    goTo(cur + 1);
+  }, 2200);
+};
+
+// 키보드
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(cur + 1); }
+  if (e.key === 'ArrowLeft') goTo(cur - 1);
+});
+
+// 초기 상태
+progress.textContent = `0 / ${SCENARIO.length}`;
+</script>
+</body>
+</html>
