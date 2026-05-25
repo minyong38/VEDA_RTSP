@@ -34,6 +34,7 @@ add_library(veda_rtsp_core STATIC
     src/rtp/streamer.cpp
     src/net/tcp_socket.cpp
     src/net/udp_socket.cpp
+    src/camera/source.cpp
 )
 
 target_include_directories(veda_rtsp_core PUBLIC

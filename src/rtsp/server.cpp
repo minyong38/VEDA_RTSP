@@ -6,6 +6,7 @@
 #include "sdp/builder.hpp"
 #include "net/tcp_socket.hpp"
 #include "rtp/streamer.hpp"
+#include "camera/source.hpp"
 
 #include <iostream>
 #include <string>
@@ -210,26 +211,46 @@ void Server::handle_client(int client_fd) {
                 conn.write(response.data(), response.size());
                 std::cout << "[Response]\n" << response << "\n";
 
-                // RTP 스트리밍 시작 (테스트용 더미 패킷)
+                // RTP 스트리밍 시작 (카메라에서 H.264 읽기)
                 if (client_rtp_port > 0) {
                     rtp::Streamer streamer;
                     if (streamer.connect(client_ip, static_cast<uint16_t>(client_rtp_port))) {
-                        std::cout << "[RTP] Sending test packets to " << client_ip
+                        std::cout << "[RTP] Streaming to " << client_ip
                                   << ":" << client_rtp_port << "\n";
 
-                        // 테스트용 더미 NAL (IDR frame 시뮬레이션)
-                        // NAL type 5 (IDR) = 0x65
-                        std::vector<uint8_t> dummy_nal = {0x65, 0x00, 0x01, 0x02, 0x03};
+                        // 카메라 시작
+                        camera::Source cam(640, 480, 30);
+                        if (cam.start()) {
+                            int frame_count = 0;
 
-                        // 5개의 테스트 프레임 전송
-                        for (int i = 0; i < 5 && g_running; ++i) {
-                            streamer.send_nal(dummy_nal.data(), dummy_nal.size());
-                            streamer.advance_timestamp(3000);  // 30fps @ 90kHz
-                            std::this_thread::sleep_for(std::chrono::milliseconds(33));
-                            std::cout << "[RTP] Sent frame " << (i + 1) << "/5\n";
+                            // NAL unit 읽어서 RTP로 전송
+                            while (g_running) {
+                                bool ok = cam.read_nal([&](const uint8_t* nal, std::size_t len) {
+                                    streamer.send_nal(nal, len);
+
+                                    // NAL type 확인 (하위 5비트)
+                                    uint8_t nal_type = nal[0] & 0x1F;
+
+                                    // IDR(5) 또는 non-IDR(1) 프레임이면 timestamp 증가
+                                    if (nal_type == 1 || nal_type == 5) {
+                                        streamer.advance_timestamp(3000);  // 30fps @ 90kHz
+                                        frame_count++;
+                                        if (frame_count % 30 == 0) {
+                                            std::cout << "[RTP] Sent " << frame_count << " frames\n";
+                                        }
+                                    }
+                                });
+
+                                if (!ok) {
+                                    break;
+                                }
+                            }
+
+                            cam.stop();
+                            std::cout << "[RTP] Stream ended, total frames: " << frame_count << "\n";
+                        } else {
+                            std::cerr << "[RTP] Failed to start camera\n";
                         }
-
-                        std::cout << "[RTP] Test stream complete\n";
                     }
                 }
 
