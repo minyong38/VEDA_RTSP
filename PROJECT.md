@@ -1,4 +1,4 @@
-# CLAUDE.md
+# VEDA_RTSP — Project Context
 
 ## Project Overview
 
@@ -140,6 +140,11 @@ rtsp://<ip>:554/<chid>/onvif/profile<no>/media.smp
 - 네트워크 바이트 오더(big-endian) 주의: htons, htonl 사용
 - 헤더 비트 패킹은 수동 시프트/마스크 (bitfield 대신)
 - 에러 처리: POSIX 소켓 에러는 errno 확인 후 적절한 RTSP 상태 코드 반환
+
+## Git Commit Rules
+
+- 커밋 메시지에 AI 보조 도구 trailer (Co-Authored-By, Generated with 등) 를 추가하지 마세요.
+- 사람이 작성한 것처럼 본문만 깔끔하게 남겨주세요.
 
 ## Progress (8주 일정)
 
