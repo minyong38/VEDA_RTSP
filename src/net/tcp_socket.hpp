@@ -40,6 +40,9 @@ public:
     ssize_t read(void* buf, std::size_t len);
     ssize_t write(const void* buf, std::size_t len);
 
+    // 연결된 클라이언트의 IP 주소 반환
+    std::string peer_ip() const;
+
     int fd() const { return fd_; }
 
 private:

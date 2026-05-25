@@ -26,10 +26,12 @@ endif()
 add_library(veda_rtsp_core STATIC
     src/rtsp/server.cpp
     src/rtsp/parser.cpp
+    src/rtsp/response.cpp
     src/rtsp/session.cpp
     src/sdp/builder.cpp
     src/rtp/packetizer.cpp
     src/rtp/h264_fua.cpp
+    src/rtp/streamer.cpp
     src/net/tcp_socket.cpp
     src/net/udp_socket.cpp
 )

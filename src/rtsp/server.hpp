@@ -23,6 +23,8 @@ public:
     int run();
 
 private:
+    void handle_client(int client_fd);
+
     uint16_t    port_;
     std::string source_path_;
 };
