@@ -13,10 +13,11 @@
 //          │
 //          └─ erase로 앞부분 잘라 다음 NAL 준비
 //
-// [알려진 한계 (앞 대화에서 언급한 버그)]
-//   현재 코드의 search_offset 갱신 로직과 `found` 플래그 사용에 결함이 있어,
-//   특정 상황에서 무한 read 루프나 underflow가 발생할 수 있다.
-//   동작은 하지만 견고하지 않으므로 다음 학습 항목으로 다시 손볼 자리.
+// [start code 분할 처리]
+//   fread는 4KB 청크 단위로 읽으므로 start code(3~4바이트)가 청크 경계에
+//   걸쳐 쪼개질 수 있다. 그래서 새 데이터를 buffer_에 붙인 뒤에는 직전
+//   버퍼 끝에서 3바이트 뒤로 물러나 재검색한다. 재검색 위치는 size_t
+//   언더플로가 나지 않도록 항상 nal_start 이상으로 가드한다.
 
 #include "camera/source.hpp"
 
@@ -87,13 +88,14 @@ void Source::stop() {
     }
 }
 
-bool Source::find_start_code(std::size_t& pos, std::size_t& start_code_len) {
-    // buffer_를 처음부터 훑으며 0x00 00 01 또는 0x00 00 00 01을 찾는다.
+bool Source::find_start_code(std::size_t offset,
+                             std::size_t& pos, std::size_t& start_code_len) const {
+    // buffer_[offset..]를 훑으며 0x00 00 01 또는 0x00 00 00 01을 찾는다.
     //
     // 루프 한계 i+2<size 이유:
     //   3바이트 검사를 안전하게 하려면 인덱스 [i], [i+1], [i+2]가 모두 유효해야 함.
     //   4바이트(0x00 00 00 01) 검사는 안에서 별도로 인덱스 검사를 한 번 더 한다.
-    for (std::size_t i = 0; i + 2 < buffer_.size(); ++i) {
+    for (std::size_t i = offset; i + 2 < buffer_.size(); ++i) {
         if (buffer_[i] == 0x00 && buffer_[i + 1] == 0x00) {
             // 3바이트 start code 우선 검사
             if (buffer_[i + 2] == 0x01) {
@@ -120,81 +122,74 @@ bool Source::read_nal(NalCallback callback) {
     // 청크 임시 버퍼. fread로 4KB씩 잘라 읽어 buffer_에 누적한다.
     uint8_t chunk[kReadChunkSize];
 
-    while (true) {
-        // ─── 1) 현재 buffer_에서 첫 번째 start code 찾기 ────────────────────
-        std::size_t first_pos = 0, first_len = 0;
-        if (!find_start_code(first_pos, first_len)) {
-            // 아직 NAL 시작 표시조차 못 봤다 → 더 읽어서 buffer_를 키운다.
+    // 파이프에서 한 청크를 읽어 buffer_에 붙인다.
+    //   true  = 데이터를 붙였음 (>0 바이트)
+    //   false = EOF (스트림 종료)
+    // n==0 이지만 EOF가 아닌 일시적 상황은 내부에서 재시도하여 블로킹한다.
+    auto fill = [&]() -> bool {
+        for (;;) {
             std::size_t n = fread(chunk, 1, kReadChunkSize, pipe_);
-            if (n == 0) {
-                if (feof(pipe_)) {
-                    return false;  // 카메라가 EOF — 스트림 종료
-                }
-                continue;  // 일시적으로 안 읽힌 것뿐, 다시 시도
-            }
-            buffer_.insert(buffer_.end(), chunk, chunk + n);
-            continue;
-        }
-
-        // ─── 2) 두 번째 start code 찾기 (= NAL의 끝) ───────────────────────
-        // NAL 데이터는 첫 start code 바로 뒤(nal_start)부터 시작해서
-        // 다음 start code 직전까지.
-        std::size_t nal_start     = first_pos + first_len;
-        std::size_t search_offset = nal_start;
-
-        while (true) {
-            // search_offset부터 다음 start code 위치 검색.
-            //
-            // 주의: 이 안의 변수 `found`가 실제로 true로 갱신되는 코드가 빠져
-            // 있다 (앞서 언급한 버그). 현재 동작은 NAL을 찾으면 즉시 return하기
-            // 때문에 우연히 굴러가지만, 못 찾을 때 분기로 빠지는 로직이
-            // 의도와 다르게 진행될 수 있다.
-            bool found = false;
-            for (std::size_t i = search_offset; i + 2 < buffer_.size(); ++i) {
-                if (buffer_[i] == 0x00 && buffer_[i + 1] == 0x00) {
-                    if (buffer_[i + 2] == 0x01 ||
-                        (i + 3 < buffer_.size() && buffer_[i + 2] == 0x00 && buffer_[i + 3] == 0x01)) {
-                        // 한 NAL 발견: nal_start ~ i-1 까지.
-                        std::size_t nal_len = i - nal_start;
-                        if (nal_len > 0) {
-                            callback(buffer_.data() + nal_start, nal_len);
-                        }
-                        // 버퍼 앞을 잘라낸다. 잘라낸 후 buffer_[0]은 두 번째
-                        // start code의 시작이므로 다음 read_nal 호출이 즉시
-                        // 이걸 다시 첫 start code로 인식하게 된다.
-                        buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<long>(i));
-                        return true;
-                    }
-                }
-            }
-
-            if (!found) {
-                // 다음 start code를 못 찾았으니 더 읽어서 buffer_ 확장.
-                std::size_t n = fread(chunk, 1, kReadChunkSize, pipe_);
-                if (n == 0) {
-                    if (feof(pipe_)) {
-                        // EOF에 도달했으면 남은 버퍼가 마지막 NAL.
-                        if (buffer_.size() > nal_start) {
-                            callback(buffer_.data() + nal_start, buffer_.size() - nal_start);
-                            buffer_.clear();
-                        }
-                        return false;
-                    }
-                    continue;
-                }
+            if (n > 0) {
                 buffer_.insert(buffer_.end(), chunk, chunk + n);
-
-                // 다음 검색은 새로 추가된 부분을 포함해서 한다.
-                // -3은 청크 경계에서 start code가 쪼개졌을 가능성 보완.
-                // (단, 이 식은 search_offset이 buffer_.size()-n-3보다 작으면
-                //  underflow가 날 수 있는 자리. nal_start 보호가 필요하다.)
-                search_offset = buffer_.size() - n - 3;
-                if (search_offset < nal_start) {
-                    search_offset = nal_start;
-                }
+                return true;
             }
+            if (feof(pipe_)) {
+                return false;  // 카메라가 EOF — 스트림 종료
+            }
+            // n==0 && !feof : 일시적으로 안 읽힌 것뿐, 다시 시도
+        }
+    };
+
+    // ─── 1) 첫 번째 start code를 버퍼 맨 앞에 정렬 ──────────────────────────
+    // 정상 흐름에서는 직전 호출이 buffer_[0]에 start code를 남겨두므로 즉시
+    // 찾는다. 첫 호출이거나 앞에 잡음이 낀 경우를 대비해 항상 한 번 정렬한다.
+    std::size_t sc_pos = 0, sc_len = 0;
+    while (!find_start_code(0, sc_pos, sc_len)) {
+        if (!fill()) {
+            return false;  // start code도 못 본 채 EOF
         }
     }
+    // start code 앞의 쓰레기 바이트는 버린다. 이제 buffer_[0..sc_len)이 start code.
+    if (sc_pos > 0) {
+        buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<long>(sc_pos));
+    }
+
+    // NAL 데이터는 첫 start code 바로 뒤부터 다음 start code 직전까지.
+    const std::size_t nal_start = sc_len;
+
+    // ─── 2) 두 번째 start code(= NAL의 끝) 찾기 ───────────────────────────
+    std::size_t scan = nal_start;
+    std::size_t next_pos = 0, next_len = 0;
+    while (!find_start_code(scan, next_pos, next_len)) {
+        // 못 찾았으니 더 읽는다. 단, start code가 청크 경계에 쪼개졌을 수
+        // 있으므로, 새 데이터를 붙이기 전 버퍼 끝에서 최대 3바이트 뒤로
+        // 물러난 지점부터 재검색한다. (언더플로 가드: 항상 nal_start 이상)
+        std::size_t resume = buffer_.size() >= 3 ? buffer_.size() - 3 : nal_start;
+        if (resume < nal_start) {
+            resume = nal_start;
+        }
+
+        if (!fill()) {
+            // EOF: 남은 버퍼 전체가 마지막 NAL.
+            std::size_t tail = buffer_.size() - nal_start;
+            if (tail > 0) {
+                callback(buffer_.data() + nal_start, tail);
+            }
+            buffer_.clear();
+            return false;
+        }
+        scan = resume;
+    }
+
+    // ─── 3) NAL 한 개 확정 → 콜백 → 버퍼 앞 잘라내기 ──────────────────────
+    std::size_t nal_len = next_pos - nal_start;
+    if (nal_len > 0) {
+        callback(buffer_.data() + nal_start, nal_len);
+    }
+    // next_pos부터(= 다음 start code)를 버퍼 맨 앞으로 남긴다. 다음 호출이
+    // 이걸 즉시 첫 start code로 인식하므로 1)의 fill 없이 빠르게 진행된다.
+    buffer_.erase(buffer_.begin(), buffer_.begin() + static_cast<long>(next_pos));
+    return true;
 }
 
 }  // namespace veda::camera

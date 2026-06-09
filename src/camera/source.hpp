@@ -58,11 +58,12 @@ public:
     bool is_running() const { return pipe_ != nullptr; }
 
 private:
-    // 내부 버퍼에서 start code를 찾아 위치/길이를 알려준다.
+    // buffer_[offset..] 구간에서 start code를 찾아 위치/길이를 알려준다.
+    //   offset          : 검색 시작 인덱스
     //   pos             : start code의 시작 인덱스
     //   start_code_len  : 3 또는 4
     // 못 찾으면 false.
-    bool find_start_code(std::size_t& pos, std::size_t& start_code_len);
+    bool find_start_code(std::size_t offset, std::size_t& pos, std::size_t& start_code_len) const;
 
     int width_;
     int height_;
