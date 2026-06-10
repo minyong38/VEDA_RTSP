@@ -64,7 +64,7 @@
 ```
 Client → Server: OPTIONS rtsp://server/stream RTSP/1.0
 Server → Client: RTSP/1.0 200 OK
-                 Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN
+                 Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER
 ```
 - 상태 변경 없음
 - 서버가 지원하는 메서드 목록 반환
@@ -101,8 +101,28 @@ Client → Server: PLAY rtsp://server/stream RTSP/1.0
 Server → Client: RTSP/1.0 200 OK
                  Session: 12345678
 ```
-- RTP 라이브러리에 스트리밍 시작 요청
+- rtp::Streamer를 클라이언트 주소에 연결하고 media::Hub에 구독 (직접 구현)
+- 200 OK를 먼저 보낸 뒤 구독 — 클라이언트가 수신 준비를 마친 후 첫 RTP 패킷 도착
 - READY → PLAYING 전이
+
+### PAUSE
+```
+Client → Server: PAUSE rtsp://server/stream RTSP/1.0
+                 Session: 12345678
+Server → Client: RTSP/1.0 200 OK
+                 Session: 12345678
+```
+- Hub 구독 해제 → RTP 송출 중지 (세션과 포트 협상은 유지)
+- PLAYING → READY 전이 (재PLAY 가능)
+
+### GET_PARAMETER
+```
+Client → Server: GET_PARAMETER rtsp://server/stream RTSP/1.0
+                 Session: 12345678
+Server → Client: RTSP/1.0 200 OK
+                 Session: 12345678
+```
+- keep-alive 용도. 어느 상태에서나 허용, 상태 변경 없음
 
 ### TEARDOWN
 ```

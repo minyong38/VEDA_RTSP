@@ -26,13 +26,15 @@ RTSP는 IP 카메라·NVR·드론 영상 전송의 사실상 표준 시그널링
 ## 주요 기능
 
 - [x] 프로젝트 구조 설계
-- [x] RTSP 1.0 요청 파서 (OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN)
+- [x] RTSP 1.0 요청 파서 (OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER)
 - [x] RTSP 응답 생성기
-- [x] DESCRIBE 응답용 SDP 본문 생성
+- [x] DESCRIBE 응답용 SDP 본문 생성 (SPS/PPS 캐시 → sprop-parameter-sets 자동 광고)
 - [x] RTP 패킷화 직접 구현 (RFC 3550 헤더 + RFC 6184 FU-A 분할)
 - [x] 카메라 소스 연동 (libcamera-vid → H.264 NAL → RTP 송출)
-- [ ] 세션 상태머신 강제 (현재는 미강제 — Session 클래스 활성화 예정)
-- [ ] 멀티클라이언트 동시 접속 (epoll 기반)
+- [x] 세션 상태머신 강제 (INIT→READY→PLAYING→CLOSED, 위반 시 455 / 세션 불일치 454)
+- [x] 멀티클라이언트 동시 접속 (epoll 이벤트 루프 + media::Hub fan-out)
+- [x] 파일 소스 모드 (`--source test.h264` — 카메라 없는 PC에서 풀 경로 검증)
+- [x] PAUSE / GET_PARAMETER(keep-alive) 지원
 
 ## 데모
 
@@ -61,7 +63,14 @@ cmake --build build -j
 ### 실행
 
 ```bash
+# 라즈베리파이 (카메라)
 ./build/veda_rtsp --port 8554
+
+# 카메라 없는 PC — H.264 파일을 라이브 스트림처럼 루프 재생
+ffmpeg -f lavfi -i testsrc=duration=60:size=640x480:rate=30 \
+       -c:v libx264 -preset ultrafast -tune zerolatency \
+       -x264-params keyint=30 -f h264 test.h264
+./build/veda_rtsp --port 8554 --source test.h264
 ```
 
 ### 클라이언트 연결
@@ -70,6 +79,7 @@ cmake --build build -j
 ffplay -rtsp_transport udp rtsp://localhost:8554/stream
 # 또는
 vlc rtsp://localhost:8554/stream
+# 멀티클라이언트: 여러 터미널에서 동시에 띄워도 같은 영상이 재생된다
 ```
 
 ### 테스트
@@ -89,18 +99,25 @@ VEDA_RTSP/
 ├── src/
 │   ├── main.cpp            # 진입점
 │   ├── rtsp/
-│   │   ├── server.{hpp,cpp}     # TCP accept 루프 + 메서드 디스패치
+│   │   ├── server.{hpp,cpp}     # epoll 이벤트 루프 (멀티클라이언트)
 │   │   ├── parser.{hpp,cpp}     # RTSP 요청 라인 + 헤더 파싱
 │   │   ├── response.{hpp,cpp}   # RTSP 응답 생성
-│   │   └── session.{hpp,cpp}    # 세션 상태머신 (예정)
+│   │   └── session.{hpp,cpp}    # 클라이언트별 세션 상태머신 (455/454 강제)
 │   ├── sdp/
 │   │   └── builder.{hpp,cpp}    # DESCRIBE 응답용 SDP 본문
 │   ├── rtp/
 │   │   ├── packetizer.{hpp,cpp} # RTP 12바이트 헤더 (RFC 3550)
 │   │   ├── h264_fua.{hpp,cpp}   # H.264 NAL → FU-A 분할 (RFC 6184)
 │   │   └── streamer.{hpp,cpp}   # NAL → RTP → UDP 송출 접착제
+│   ├── media/
+│   │   ├── nal_source.hpp           # 소스 추상 인터페이스
+│   │   ├── annexb_reader.{hpp,cpp}  # Annex-B NAL 경계 분리 (공용)
+│   │   ├── file_source.{hpp,cpp}    # .h264 파일 + fps 페이싱 + 루프
+│   │   └── hub.{hpp,cpp}            # 소스 1개 → 시청자 N명 fan-out
 │   ├── camera/
 │   │   └── source.{hpp,cpp}     # libcamera-vid → H.264 NAL 추출
+│   ├── util/
+│   │   └── base64.{hpp,cpp}     # sprop-parameter-sets 인코딩
 │   └── net/
 │       ├── tcp_socket.{hpp,cpp} # POSIX TCP 래퍼
 │       └── udp_socket.{hpp,cpp} # POSIX UDP 래퍼 (RTP 전송)
@@ -123,10 +140,10 @@ VEDA_RTSP/
 | Week 2 | DESCRIBE → SDP 응답, SETUP 핸들러 | ✅ 완료 |
 | Week 3 | PLAY/TEARDOWN + RTP 송출 | ✅ 완료 |
 | Week 4 | H.264 FU-A 분할 + 카메라 연동 (첫 영상 재생) | ✅ 완료 |
-| Week 5 | 세션 상태머신 강제 + 멀티클라이언트 (epoll) | 🟡 진행 중 |
-| Week 6 | 안정화 + 에러 처리 (카메라 NAL 파서 등) | ⬜ |
+| Week 5 | 세션 상태머신 강제 + 멀티클라이언트 (epoll) | ✅ 완료 |
+| Week 6 | 안정화 + 에러 처리 (파일 소스, PAUSE, keep-alive, 끊김 정리) | ✅ 완료 |
 | Week 7 | 성능 측정 + 최적화 | ⬜ |
-| Week 8 | 문서 정리 + 포트폴리오화 | ⬜ |
+| Week 8 | 문서 정리 + 포트폴리오화 | 🟡 진행 중 |
 
 ## 참고 표준
 
