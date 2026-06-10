@@ -37,8 +37,9 @@ enum class Method {
     DESCRIBE,   // "스트림 정보 줘" → SDP 본문 반환
     SETUP,      // "내 RTP 포트는 X야, 너의 포트 알려줘" → 세션 ID 발급
     PLAY,       // "재생 시작" → RTP 패킷 흘리기 시작
-    PAUSE,      // "잠시 멈춰" (지금은 미구현)
+    PAUSE,      // "잠시 멈춰" → PLAYING에서 READY로 복귀
     TEARDOWN,   // "연결 끊자" → 세션 정리
+    GET_PARAMETER,  // keep-alive 용도. 본문 없이 오면 200 OK만 돌려주면 됨.
     UNKNOWN,
 };
 

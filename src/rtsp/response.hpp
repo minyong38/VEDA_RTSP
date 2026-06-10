@@ -30,6 +30,10 @@ public:
     // 가장 단순한 200 OK (TEARDOWN 등 응답이 단순한 경우용)
     static std::string ok(int cseq);
 
+    // Session 헤더를 메아리치는 200 OK (PAUSE, GET_PARAMETER keep-alive 등).
+    // 세션이 있는 요청의 응답에는 Session 헤더를 같이 돌려주는 게 관례다.
+    static std::string ok(int cseq, const std::string& session_id);
+
     // OPTIONS 응답: Public 헤더로 지원 메서드 목록 광고.
     // 클라이언트(ffplay/VLC)는 이 목록을 보고 어떤 메서드를 보낼지 결정.
     static std::string options(int cseq);

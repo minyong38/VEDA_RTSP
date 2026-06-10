@@ -22,13 +22,22 @@ std::string Response::ok(int cseq) {
     return oss.str();
 }
 
+std::string Response::ok(int cseq, const std::string& session_id) {
+    std::ostringstream oss;
+    oss << "RTSP/1.0 200 OK\r\n"
+        << "CSeq: " << cseq << "\r\n"
+        << "Session: " << session_id << "\r\n"
+        << "\r\n";
+    return oss.str();
+}
+
 std::string Response::options(int cseq) {
     // Public 헤더: "이 서버가 받을 수 있는 메서드는 이것들이다"
     // ffplay는 이걸 보고 PAUSE를 보낼지 말지 결정하기도 함.
     std::ostringstream oss;
     oss << "RTSP/1.0 200 OK\r\n"
         << "CSeq: " << cseq << "\r\n"
-        << "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n"
+        << "Public: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN, GET_PARAMETER\r\n"
         << "\r\n";
     return oss.str();
 }

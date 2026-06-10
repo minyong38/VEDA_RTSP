@@ -57,6 +57,7 @@ Method string_to_method(std::string_view method_str) {
     if (iequals(method_str, "PLAY"))     return Method::PLAY;
     if (iequals(method_str, "PAUSE"))    return Method::PAUSE;
     if (iequals(method_str, "TEARDOWN")) return Method::TEARDOWN;
+    if (iequals(method_str, "GET_PARAMETER")) return Method::GET_PARAMETER;
     return Method::UNKNOWN;
 }
 
