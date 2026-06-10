@@ -35,7 +35,15 @@ add_library(veda_rtsp_core STATIC
     src/net/tcp_socket.cpp
     src/net/udp_socket.cpp
     src/camera/source.cpp
+    src/media/annexb_reader.cpp
+    src/media/file_source.cpp
+    src/media/hub.cpp
+    src/util/base64.cpp
 )
+
+# media::Hub가 std::thread를 쓴다 (소스 펌프 스레드)
+find_package(Threads REQUIRED)
+target_link_libraries(veda_rtsp_core PUBLIC Threads::Threads)
 
 target_include_directories(veda_rtsp_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
