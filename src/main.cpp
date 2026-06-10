@@ -10,8 +10,8 @@
 //   ./veda_rtsp --port 8554 --source test.h264   # H.264 파일 루프 재생 (개발 PC용)
 //
 // [테스트용 H.264 파일 만들기]
-//   ffmpeg -f lavfi -i testsrc=duration=60:size=640x480:rate=30 \
-//          -c:v libx264 -preset ultrafast -tune zerolatency \
+//   ffmpeg -f lavfi -i testsrc=duration=60:size=640x480:rate=30
+//          -c:v libx264 -preset ultrafast -tune zerolatency
 //          -x264-params keyint=30 -f h264 test.h264
 //
 // [클라이언트 접속]

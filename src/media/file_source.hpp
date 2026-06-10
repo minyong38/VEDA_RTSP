@@ -8,8 +8,8 @@
 //   라즈베리파이 카메라가 없는 개발 PC에서 서버 전체 경로(RTSP 핸드셰이크 →
 //   RTP 송출 → VLC 재생)를 검증하기 위한 소스. 테스트 파일은 ffmpeg로 생성:
 //
-//     ffmpeg -f lavfi -i testsrc=duration=60:size=640x480:rate=30 \
-//            -c:v libx264 -preset ultrafast -tune zerolatency \
+//     ffmpeg -f lavfi -i testsrc=duration=60:size=640x480:rate=30
+//            -c:v libx264 -preset ultrafast -tune zerolatency
 //            -x264-params keyint=30 -f h264 tools/samples/test.h264
 //
 // [왜 페이싱(pacing)이 필요한가]
